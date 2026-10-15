@@ -1,0 +1,281 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>EMS救護車使用頻率檢索與紀錄系統 (雲端同步版)</title>
+    <style>
+        body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; background-color: #121212; color: #e0e0e0; margin: 0; padding: 20px; }
+        .container { max-width: 800px; margin: 0 auto; background: #1e1e1e; padding: 20px; border-radius: 8px; box-shadow: 0 4px 6px rgba(0,0,0,0.3); }
+        h1, h2, h3 { color: #ffffff; }
+        .status { color: #4caf50; font-weight: bold; margin-bottom: 15px; }
+        .form-group { margin-bottom: 15px; }
+        label { display: block; margin-bottom: 5px; font-weight: bold; }
+        input[type="text"], input[type="datetime-local"], select, textarea { width: 100%; padding: 10px; border: 1px solid #333; background: #2a2a2a; color: #fff; border-radius: 4px; box-sizing: border-box; }
+        button { background-color: #007bff; color: white; padding: 10px 15px; border: none; border-radius: 4px; cursor: pointer; font-size: 16px; margin-right: 10px; }
+        button:hover { background-color: #0056b3; }
+        .btn-danger { background-color: #dc3545; }
+        .btn-danger:hover { background-color: #bd2130; }
+        .btn-secondary { background-color: #6c757d; }
+        .btn-secondary:hover { background-color: #5a6268; }
+        .card { background: #252525; padding: 15px; border-radius: 6px; margin-bottom: 20px; border-left: 5px solid #007bff; }
+        .radio-group { display: flex; gap: 15px; margin-top: 5px; }
+        .record-item { background: #2a2a2a; padding: 10px; margin-top: 10px; border-radius: 4px; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>EMS 救護車使用頻率檢索與紀錄系統</h1>
+        <div class="status">● 連接雲端資料庫中... (已切換至 Google Sheets API)</div>
+        <button onclick="exportCSV()">匯出 CSV 報表</button>
+
+        <hr>
+
+        <h2>## 患者個案資料卡與快速檢索</h2>
+        <p>輸入身分證字號或姓名檢索患者，資料即時同步至所有手機與裝置。</p>
+        
+        <div class="form-group">
+            <button onclick="scanID()">掃描證件/身分照</button>
+            <span id="ocrStatus"></span>
+        </div>
+
+        <div class="card">
+            <div class="form-group">
+                <label>患者照片</label>
+                <div style="background: #333; width: 100px; height: 120px; display: flex; align-items: center; justify-content: center; margin-bottom: 10px;">
+                    <span id="photoStatus">尚無大頭照</span>
+                </div>
+                <button onclick="zoomPhoto()">點擊放大人像比對</button>
+                <button class="btn-secondary" onclick="changePhoto()">更換照片</button>
+            </div>
+
+            <div class="form-group">
+                <label>姓名/身分證字號快速檢索 *</label>
+                <input type="text" id="searchKey" placeholder="輸入身分證字號或姓名進行檢索..." oninput="searchPatient()">
+            </div>
+
+            <div class="form-group">
+                <label>性別</label>
+                <div class="radio-group">
+                    <label><input type="radio" name="gender" value="男" checked> 男</label>
+                    <label><input type="radio" name="gender" value="女"> 女</label>
+                    <label><input type="radio" name="gender" value="其他"> 其他</label>
+                </div>
+            </div>
+
+            <div class="form-group">
+                <label>民國生日(6碼):</label>
+                <input type="text" id="birthDate" placeholder="例如 750101">
+            </div>
+
+            <p>歷史叫車次數: <strong id="callCount" style="color: #ffc107;">0 次</strong></p>
+            <p style="font-size: 12px; color: #aaa;">資料即時同步至雲端資料庫，所有裝置皆可同步讀取與修改。</p>
+            <button class="btn-danger" onclick="confirmDelete()">刪除此個案資料</button>
+        </div>
+
+        <h3>### 本次救護案件紀錄登打</h3>
+        <div class="card" style="border-left-color: #28a745;">
+            <div class="form-group">
+                <label>出勤日期時間 *</label>
+                <input type="datetime-local" id="dispatchTime">
+            </div>
+
+            <div class="form-group">
+                <label>送往醫院 (選填) <button class="btn-secondary" style="padding: 2px 5px; font-size: 12px;" onclick="editOptions('hospital')">編輯選項</button></label>
+                <select id="hospitalSelect">
+                    <option value="">未填寫 / 請選擇醫院...</option>
+                    <option value="台南醫院">台南醫院</option>
+                    <option value="成大醫院">成大醫院</option>
+                    <option value="奇美醫院">奇美醫院</option>
+                </select>
+            </div>
+
+            <div class="form-group">
+                <label>濫用原因 (選填) <button class="btn-secondary" style="padding: 2px 5px; font-size: 12px;" onclick="editOptions('reason')">編輯選項</button></label>
+                <select id="reasonSelect">
+                    <option value="">未填寫 / 請選擇原因...</option>
+                    <option value="酒醉路倒">酒醉路倒</option>
+                    <option value="常客點名">常客點名</option>
+                    <option value="非緊急狀況">非緊急狀況</option>
+                </select>
+            </div>
+
+            <div class="form-group">
+                <label>常用備註標籤 (可複選) <button class="btn-secondary" style="padding: 2px 5px; font-size: 12px;" onclick="editOptions('tags')">編輯標籤</button></label>
+                <div id="tagsContainer">
+                    <label><input type="checkbox" value="常客"> 常客</label>
+                    <label><input type="checkbox" value="拒送"> 拒送</label>
+                    <label><input type="checkbox" value="暴力傾向"> 暴力傾向</label>
+                </div>
+            </div>
+
+            <div class="form-group">
+                <label>詳細說明內容</label>
+                <textarea id="detailContent" rows="3" placeholder="請輸入本次救護案件詳細狀況..."></textarea>
+            </div>
+
+            <button onclick="saveRecord()">儲存本次救護紀錄與個案資料</button>
+        </div>
+
+        <h3>### 過往救護紀錄明細</h3>
+        <p id="recordSummary">0 筆紀錄</p>
+        <div id="historyRecords">
+            <p style="color: #aaa;">請在上方檢索或輸入個案資料檢索該患者歷史救護紀錄</p>
+        </div>
+    </div>
+
+    <script>
+        // ==========================================
+        // 貼上你剛剛複製的「網頁應用程式」網址
+        const GAS_URL = "https://script.google.com/macros/s/AKfycby65-3_kRGzJROm892XpjELFO8ZbwjfCWGZr_jaAZU0Nm-jmHD_ImoZddCST2ELKiCT/exec"; 
+        // ==========================================
+
+        let allPatientsData = [];
+
+        // 初始化設定目前時間
+        window.onload = function() {
+            const now = new Date();
+            now.setMinutes(now.getMinutes() - now.getTimezoneOffset());
+            document.getElementById('dispatchTime').value = now.toISOString().slice(0, 16);
+            loadCloudData();
+        };
+
+        async function loadCloudData() {
+            try {
+                const response = await fetch(GAS_URL);
+                if (response.ok) {
+                    allPatientsData = await response.json();
+                    document.querySelector('.status').textContent = "● 連接雲端資料庫成功 (已與 Google Sheets 同步)";
+                }
+            } catch (error) {
+                console.error("讀取雲端資料失敗:", error);
+                document.querySelector('.status').textContent = "● 雲端資料庫連線失敗，請檢查部署設定";
+            }
+        }
+
+        function searchPatient() {
+            const searchKey = document.getElementById('searchKey').value.trim().toLowerCase();
+            const historyContainer = document.getElementById('historyRecords');
+            
+            if (!searchKey) {
+                document.getElementById('callCount').textContent = "0 次";
+                document.getElementById('recordSummary').textContent = "0 筆紀錄";
+                historyContainer.innerHTML = '<p style="color: #aaa;">請在上方檢索或輸入個案資料檢索該患者歷史救護紀錄</p>';
+                return;
+            }
+
+            // 篩選身分證或姓名符合的歷史資料
+            const filtered = allPatientsData.filter(item => 
+                (item.身分證字號 && item.身分證字號.toLowerCase().includes(searchKey)) || 
+                (item.姓名 && item.姓名.toLowerCase().includes(searchKey))
+            );
+
+            document.getElementById('callCount').textContent = `${filtered.length} 次`;
+            document.getElementById('recordSummary').textContent = `${filtered.length} 筆紀錄`;
+
+            if (filtered.length > 0) {
+                // 自動帶入最新一筆的基本資料
+                const lastRecord = filtered[filtered.length - 1];
+                if (lastRecord.性別) {
+                    const radios = document.getElementsByName('gender');
+                    for (let r of radios) {
+                        if (r.value === lastRecord.性別) r.checked = true;
+                    }
+                }
+                if (lastRecord.民國生日) {
+                    document.getElementById('birthDate').value = lastRecord.民國生日;
+                }
+
+                // 渲染歷史列表
+                historyContainer.innerHTML = "";
+                filtered.forEach((item, idx) => {
+                    const div = document.createElement('div');
+                    div.className = "record-item";
+                    div.innerHTML = `
+                        <strong>#${idx + 1} 出勤時間:</strong> ${item.出勤時間 || '未註明'}<br>
+                        <strong>送往醫院:</strong> ${item.送往醫院 || '無'} | <strong>濫用原因:</strong> ${item.濫用原因 || '無'}<br>
+                        <strong>標籤:</strong> ${item.備註標籤 || '無'}<br>
+                        <strong>詳細說明:</strong> ${item.詳細說明內容 || '無'}
+                    `;
+                    historyContainer.appendChild(div);
+                });
+            } else {
+                historyContainer.innerHTML = '<p style="color: #aaa;">查無此患者的歷史紀錄，您可直接在下方登打建立新個案。</p>';
+            }
+        }
+
+        async function saveRecord() {
+            const searchKey = document.getElementById('searchKey').value.trim();
+            const birthDate = document.getElementById('birthDate').value.trim();
+            const dispatchTime = document.getElementById('dispatchTime').value;
+            const hospital = document.getElementById('hospitalSelect').value;
+            const reason = document.getElementById('reasonSelect').value;
+            const detailContent = document.getElementById('detailContent').value.trim();
+            
+            let gender = "男";
+            const radios = document.getElementsByName('gender');
+            for (let r of radios) { if (r.checked) gender = r.value; }
+
+            if (!searchKey) {
+                alert("請務必輸入身分證字號或姓名作為檢索依據！");
+                return;
+            }
+
+            // 取得勾選的標籤
+            const checkboxes = document.querySelectorAll('#tagsContainer input[type="checkbox"]');
+            let selectedTags = [];
+            checkboxes.forEach(cb => { if (cb.checked) selectedTags.push(cb.value); });
+
+            // 判斷 searchKey 是身分證還是姓名 (簡單正則判斷開頭是否為英文)
+            let id = "";
+            let name = "";
+            if (/^[A-Za-z]/.test(searchKey)) {
+                id = searchKey;
+            } else {
+                name = searchKey;
+            }
+
+            const payload = {
+                id: id,
+                name: name,
+                gender: gender,
+                birth: birthDate,
+                time: dispatchTime,
+                hospital: hospital,
+                reason: reason,
+                tags: selectedTags.join(', '),
+                content: detailContent
+            };
+
+            document.querySelector('.status').textContent = "● 正在即時同步至雲端資料庫...";
+
+            try {
+                const response = await fetch(GAS_URL, {
+                    method: 'POST',
+                    body: JSON.stringify(payload)
+                });
+                const result = await response.json();
+                if (result.status === "success") {
+                    alert("儲存成功！資料已同步至雲端資料庫。");
+                    document.getElementById('detailContent').value = "";
+                    await loadCloudData(); // 重新讀取雲端最新狀態
+                    searchPatient();       // 刷新明細
+                } else {
+                    alert("同步失敗：" + result.message);
+                }
+            } catch (error) {
+                console.error("發送失敗:", error);
+                alert("網路異常，無法連線至雲端資料庫。");
+            }
+        }
+
+        // 其餘 UI 存根功能
+        function exportCSV() { alert("正在建立 CSV 報表匯出功能..."); }
+        function scanID() { alert("開啟證件掃描相機... (請確保手機瀏覽器有鏡頭權限)"); }
+        function zoomPhoto() { alert("人像放大預核對模式"); }
+        function changePhoto() { alert("選擇新大頭照檔案"); }
+        function confirmDelete() { if(confirm("確定要從雲端抹除此患者檔案？")) alert("已發送刪除請求"); }
+        function editOptions(type) { alert("編輯 " + type + " 設定選項"); }
+    </script>
+</body>
+</html>
